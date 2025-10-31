@@ -49,7 +49,7 @@ npm run lint
 ## Donation 寄付
 
 If you like the application, please consider making a donation:  
-寄付してくれるとうれしいお(=^・・^=)
+寄付してくれるとうれしいお(=^・・^=)  
 bitcoin: 
 `
 bc1qnpqpfq7e8pjtlqj7aa6x2y2c9ctnpts5u9lx7v
