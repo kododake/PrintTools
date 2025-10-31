@@ -45,3 +45,12 @@ npm run lint
 - プリンターやブラウザ側の余白設定を「なし」にすると紙いっぱいに並べやすくなります。
 - プリンターの余白設定によって、縁なし印刷ができない場合があります。
 - 用紙を変更する際は、ブラウザ・プリンター双方で同じ用紙サイズを設定してください。
+
+## Donation 寄付
+
+If you like the application, please consider making a donation:  
+寄付してくれるとうれしいお(=^・・^=)
+bitcoin: 
+`
+bc1qnpqpfq7e8pjtlqj7aa6x2y2c9ctnpts5u9lx7v
+`
