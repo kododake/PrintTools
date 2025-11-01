@@ -36,6 +36,9 @@ export default function ImageTilingPrint() {
   const [tileHeightMm, setTileHeightMm] = useState(50);
   const [tileSpacingMm, setTileSpacingMm] = useState(0);
   const [lockAspect, setLockAspect] = useState(true);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
 
   const activePaper = PAPER_PRESETS.find((preset) => preset.id === paperPreset) ?? PAPER_PRESETS[1];
 
@@ -77,13 +80,51 @@ export default function ImageTilingPrint() {
     total: totalTiles,
   });
 
-  const previewScale = useMemo(() => {
-    const maxDimensionPx = 640;
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const previewSizing = useMemo(() => {
     const widthPx = mmToPixels(pageWidthMm);
     const heightPx = mmToPixels(pageHeightMm);
-    const scale = maxDimensionPx / Math.max(widthPx, heightPx);
-    return Math.min(1, Number.isFinite(scale) ? scale : 1);
-  }, [pageWidthMm, pageHeightMm]);
+    const viewportLimit = Math.max(320, viewportWidth - 48);
+    const maxWidthPx = Math.min(640, viewportLimit);
+    const baseWidthPx = Math.max(widthPx, 1);
+    const previewWidthPx = Math.min(baseWidthPx, maxWidthPx);
+    const scale = previewWidthPx / baseWidthPx;
+    const pixelsPerMm = mmToPixels(1) * scale;
+
+    return {
+      widthPx,
+      heightPx,
+      previewWidthPx,
+      previewHeightPx: heightPx * scale,
+      scale,
+      pixelsPerMm,
+      marginPx: pixelsPerMm * cappedMargin,
+      tileWidthPx: pixelsPerMm * effectiveTileWidthMm,
+      tileHeightPx: pixelsPerMm * effectiveTileHeightMm,
+      tileSpacingPx: pixelsPerMm * spacingMm,
+      aspectRatio: `${pageWidthMm} / ${pageHeightMm}`,
+    };
+  }, [
+    cappedMargin,
+    effectiveTileHeightMm,
+    effectiveTileWidthMm,
+    pageHeightMm,
+    pageWidthMm,
+    spacingMm,
+    viewportWidth,
+  ]);
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -288,30 +329,44 @@ export default function ImageTilingPrint() {
           <div
             className="preview__page"
             style={{
-              width: `${pageWidthMm}mm`,
-              height: `${pageHeightMm}mm`,
-              padding: `${cappedMargin}mm`,
-              transform: `scale(${previewScale})`,
+              width: `${previewSizing.previewWidthPx}px`,
+              height: `${previewSizing.previewHeightPx}px`,
+              aspectRatio: previewSizing.aspectRatio,
+              ["--page-width-mm" as any]: `${pageWidthMm}`,
+              ["--page-height-mm" as any]: `${pageHeightMm}`,
+              ["--page-margin-mm" as any]: `${cappedMargin}`,
             }}
           >
-            {imageUrl ? (
-              <div
-                className="preview__grid"
-                style={{
-                  gridTemplateColumns: `repeat(${tilesPerRow}, ${effectiveTileWidthMm}mm)`,
-                  gridAutoRows: `${effectiveTileHeightMm}mm`,
-                  gap: `${spacingMm}mm`,
-                }}
-              >
-                {tileIndices.map((tile: number) => (
-                  <figure className="preview__tile" key={tile}>
-                    <img src={imageUrl} alt={t("previewImageAlt")} />
-                  </figure>
-                ))}
-              </div>
-            ) : (
-              <div className="preview__placeholder">{t("previewPlaceholder")}</div>
-            )}
+            <div
+              className="preview__page-inner"
+              style={{
+                width: `${previewSizing.previewWidthPx}px`,
+                height: `${previewSizing.previewHeightPx}px`,
+                padding: `${previewSizing.marginPx}px`,
+                position: "relative",
+                overflow: "hidden",
+                transformOrigin: "top left",
+                ["--tile-width" as any]: `${previewSizing.tileWidthPx}px`,
+                ["--tile-height" as any]: `${previewSizing.tileHeightPx}px`,
+                ["--tile-gap" as any]: `${previewSizing.tileSpacingPx}px`,
+                ["--tile-width-print" as any]: `${effectiveTileWidthMm}mm`,
+                ["--tile-height-print" as any]: `${effectiveTileHeightMm}mm`,
+                ["--tile-gap-print" as any]: `${spacingMm}mm`,
+                ["--tiles-per-row" as any]: `${tilesPerRow}`,
+              }}
+            >
+              {imageUrl ? (
+                <div className="preview__grid">
+                  {tileIndices.map((tile: number) => (
+                    <figure className="preview__tile" key={tile}>
+                      <img src={imageUrl} alt={t("previewImageAlt")} />
+                    </figure>
+                  ))}
+                </div>
+              ) : (
+                <div className="preview__placeholder">{t("previewPlaceholder")}</div>
+              )}
+            </div>
           </div>
         </section>
       </div>
