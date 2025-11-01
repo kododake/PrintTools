@@ -1,10 +1,11 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 
 import { useI18n } from "../i18n";
 import "./ImageTilingPrint.css";
 
 const MM_PER_INCH = 25.4;
 const CSS_DPI = 96;
+const INPUT_DEBOUNCE_MS = 1000;
 
 const PAPER_PRESETS = [
   { id: "a5", labelKey: "paperLabelA5", width: 148, height: 210 },
@@ -23,6 +24,36 @@ function mmToPixels(mm: number) {
   return (mm / MM_PER_INCH) * CSS_DPI;
 }
 
+type SanitizeOptions = {
+  min?: number;
+  precision?: number;
+};
+
+function sanitizeNumber(rawValue: string, options: SanitizeOptions = {}) {
+  if (rawValue.trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const { min, precision } = options;
+  let next = parsed;
+
+  if (typeof min === "number") {
+    next = Math.max(min, next);
+  }
+
+  if (typeof precision === "number") {
+    const factor = 10 ** precision;
+    next = Math.round(next * factor) / factor;
+  }
+
+  return next;
+}
+
 export default function ImageTilingPrint() {
   const { t } = useI18n();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -39,6 +70,195 @@ export default function ImageTilingPrint() {
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1024
   );
+  const [customWidthInput, setCustomWidthInput] = useState(() => String(customWidth));
+  const [customHeightInput, setCustomHeightInput] = useState(() => String(customHeight));
+  const [marginInput, setMarginInput] = useState(() => String(marginMm));
+  const [tileWidthInput, setTileWidthInput] = useState(() => String(tileWidthMm));
+  const [tileHeightInput, setTileHeightInput] = useState(() => String(tileHeightMm));
+  const [tileSpacingInput, setTileSpacingInput] = useState(() => String(tileSpacingMm));
+
+  const commitNumberInput = (
+    rawValue: string,
+    currentNumeric: number,
+    setNumeric: Dispatch<SetStateAction<number>>,
+    setRaw: Dispatch<SetStateAction<string>>,
+    options: SanitizeOptions = {}
+  ) => {
+    const sanitized = sanitizeNumber(rawValue, options);
+    if (sanitized === null) {
+      setRaw(String(currentNumeric));
+      return currentNumeric;
+    }
+
+    setNumeric((prev) => (prev === sanitized ? prev : sanitized));
+    setRaw(String(sanitized));
+    return sanitized;
+  };
+
+  const commitCustomWidth = () => {
+    commitNumberInput(customWidthInput, customWidth, setCustomWidth, setCustomWidthInput, {
+      min: 50,
+      precision: 2,
+    });
+  };
+
+  const commitCustomHeight = () => {
+    commitNumberInput(customHeightInput, customHeight, setCustomHeight, setCustomHeightInput, {
+      min: 50,
+      precision: 2,
+    });
+  };
+
+  const commitMargin = () => {
+    commitNumberInput(marginInput, marginMm, setMarginMm, setMarginInput, {
+      min: 0,
+      precision: 2,
+    });
+  };
+
+  const commitTileWidth = () => {
+    const nextWidth = commitNumberInput(
+      tileWidthInput,
+      tileWidthMm,
+      setTileWidthMm,
+      setTileWidthInput,
+      {
+        min: 5,
+        precision: 2,
+      }
+    );
+
+    if (lockAspect && imageAspect) {
+      const ratioHeight = Math.max(1, nextWidth / Math.max(imageAspect, 0.01));
+      const rounded = Math.round(ratioHeight * 100) / 100;
+      setTileHeightMm((prev) => (prev === rounded ? prev : rounded));
+      setTileHeightInput(String(rounded));
+    }
+  };
+
+  const commitTileHeight = () => {
+    if (lockAspect && imageAspect) {
+      return;
+    }
+
+    commitNumberInput(tileHeightInput, tileHeightMm, setTileHeightMm, setTileHeightInput, {
+      min: 5,
+      precision: 2,
+    });
+  };
+
+  const commitTileSpacing = () => {
+    commitNumberInput(
+      tileSpacingInput,
+      tileSpacingMm,
+      setTileSpacingMm,
+      setTileSpacingInput,
+      {
+        min: 0,
+        precision: 2,
+      }
+    );
+  };
+
+  useEffect(() => {
+    setCustomWidthInput(String(customWidth));
+  }, [customWidth]);
+
+  useEffect(() => {
+    setCustomHeightInput(String(customHeight));
+  }, [customHeight]);
+
+  useEffect(() => {
+    setMarginInput(String(marginMm));
+  }, [marginMm]);
+
+  useEffect(() => {
+    setTileWidthInput(String(tileWidthMm));
+  }, [tileWidthMm]);
+
+  useEffect(() => {
+    setTileHeightInput(String(tileHeightMm));
+  }, [tileHeightMm]);
+
+  useEffect(() => {
+    setTileSpacingInput(String(tileSpacingMm));
+  }, [tileSpacingMm]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(customWidthInput, { min: 1, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setCustomWidth((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [customWidthInput]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(customHeightInput, { min: 1, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setCustomHeight((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [customHeightInput]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(marginInput, { min: 0, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setMarginMm((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [marginInput]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(tileWidthInput, { min: 0, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setTileWidthMm((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [tileWidthInput]);
+
+  useEffect(() => {
+    if (lockAspect && imageAspect) {
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(tileHeightInput, { min: 0, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setTileHeightMm((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [tileHeightInput, imageAspect, lockAspect]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const sanitized = sanitizeNumber(tileSpacingInput, { min: 0, precision: 2 });
+      if (sanitized === null) {
+        return;
+      }
+      setTileSpacingMm((prev) => (prev === sanitized ? prev : sanitized));
+    }, INPUT_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [tileSpacingInput]);
 
   const activePaper = PAPER_PRESETS.find((preset) => preset.id === paperPreset) ?? PAPER_PRESETS[1];
 
@@ -151,10 +371,6 @@ export default function ImageTilingPrint() {
     img.src = url;
   };
 
-  const displayedTileHeight = lockAspect && imageAspect
-    ? Number((effectiveTileWidthMm / Math.max(imageAspect, 0.01)).toFixed(2))
-    : tileHeightMm;
-
   useEffect(() => {
     if (!lockAspect || !imageAspect) {
       return;
@@ -162,22 +378,21 @@ export default function ImageTilingPrint() {
 
     const nextHeight = effectiveTileWidthMm / Math.max(imageAspect, 0.01);
     if (Math.abs(nextHeight - tileHeightMm) > 0.05) {
-      setTileHeightMm(Number(nextHeight.toFixed(2)));
+      const rounded = Math.round(nextHeight * 100) / 100;
+      setTileHeightMm((prev) => (prev === rounded ? prev : rounded));
+      setTileHeightInput(String(rounded));
     }
   }, [effectiveTileWidthMm, imageAspect, lockAspect, tileHeightMm]);
 
   const handleTileWidthBlur = () => {
-    if (!lockAspect || !imageAspect) {
-      return;
-    }
-
-    const nextHeight = effectiveTileWidthMm / Math.max(imageAspect, 0.01);
-    setTileHeightMm(Number(nextHeight.toFixed(2)));
+    commitTileWidth();
   };
 
   const handlePrint = () => {
     window.print();
   };
+
+  const tileHeightInputValue = lockAspect && imageAspect ? String(tileHeightMm) : tileHeightInput;
 
   return (
     <section className="page">
@@ -226,8 +441,9 @@ export default function ImageTilingPrint() {
                   <input
                     type="number"
                     min={50}
-                    value={customWidth}
-                    onChange={(event) => setCustomWidth(Number(event.target.value))}
+                    value={customWidthInput}
+                    onChange={(event) => setCustomWidthInput(event.target.value)}
+                    onBlur={commitCustomWidth}
                   />
                 </label>
                 <label className="controls__field">
@@ -235,8 +451,9 @@ export default function ImageTilingPrint() {
                   <input
                     type="number"
                     min={50}
-                    value={customHeight}
-                    onChange={(event) => setCustomHeight(Number(event.target.value))}
+                    value={customHeightInput}
+                    onChange={(event) => setCustomHeightInput(event.target.value)}
+                    onBlur={commitCustomHeight}
                   />
                 </label>
               </div>
@@ -258,8 +475,9 @@ export default function ImageTilingPrint() {
                 <input
                   type="number"
                   min={0}
-                  value={marginMm}
-                  onChange={(event) => setMarginMm(Number(event.target.value))}
+                  value={marginInput}
+                  onChange={(event) => setMarginInput(event.target.value)}
+                  onBlur={commitMargin}
                 />
               </label>
             </div>
@@ -273,8 +491,8 @@ export default function ImageTilingPrint() {
                 <input
                   type="number"
                   min={5}
-                  value={tileWidthMm}
-                  onChange={(event) => setTileWidthMm(Number(event.target.value))}
+                  value={tileWidthInput}
+                  onChange={(event) => setTileWidthInput(event.target.value)}
                   onBlur={handleTileWidthBlur}
                 />
               </label>
@@ -283,8 +501,9 @@ export default function ImageTilingPrint() {
                 <input
                   type="number"
                   min={5}
-                  value={displayedTileHeight}
-                  onChange={(event) => setTileHeightMm(Number(event.target.value))}
+                  value={tileHeightInputValue}
+                  onChange={(event) => setTileHeightInput(event.target.value)}
+                  onBlur={commitTileHeight}
                   disabled={lockAspect && !!imageUrl}
                 />
               </label>
@@ -305,8 +524,9 @@ export default function ImageTilingPrint() {
               <input
                 type="number"
                 min={0}
-                value={tileSpacingMm}
-                onChange={(event) => setTileSpacingMm(Number(event.target.value))}
+                value={tileSpacingInput}
+                onChange={(event) => setTileSpacingInput(event.target.value)}
+                onBlur={commitTileSpacing}
               />
             </label>
 
